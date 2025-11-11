@@ -28,3 +28,8 @@ Edge DataFusion code template
 1) road_z -> road_list 벡터 형태로 데이터 저장
 2) 별개로 adcm::map_data_Objects mapData 저장
 3) road_list에서 index 0~22까지 map_2d_location 데이터 꺼내서 mapData에 반영 (누적)
+
+
+## 2025.11.11 변경 사항
+### ThreadReceiveWorkInfo() - WorkInfo 수신 후 맵 생성
+
