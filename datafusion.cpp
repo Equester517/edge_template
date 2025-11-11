@@ -223,3 +223,91 @@ void UpdateMapData(adcm::map_data_Objects &mapData, const std::vector<ObstacleDa
 
     return;
 }
+
+// work_information 수신
+void ThreadReceiveWorkInfo()
+{
+    adcm::Log::Info() << "DataFusion ThreadReceiveWorkInfo";
+    adcm::WorkInformation_Subscriber workInformation_subscriber;
+    workInformation_subscriber.init("DataFusion/DataFusion/RPort_work_information");
+    adcm::Log::Info() << "ThreadReceiveWorkInfo start...";
+
+    while (continueExecution)
+    {
+        if (!workInformation_subscriber.waitEvent(10000))
+            continue; // 이벤트가 없다면 루프 다시 실행
+
+        adcm::Log::Info() << "DataFusion Work Information received";
+
+        while (!workInformation_subscriber.isEventQueueEmpty())
+        {
+            auto data = workInformation_subscriber.getEvent();
+
+            main_vehicle_size.length = data->main_vehicle.length / 100.0;
+            main_vehicle_size.width = data->main_vehicle.width / 100.0;
+            if (main_vehicle_size.length != 0) // 메인차량이 있다면 workego = true
+            {
+                workego = true;
+                adcm::Log::Info() << "[WorkInfo] 메인차량 길이: " << main_vehicle_size.length << ", 폭: " << main_vehicle_size.width;
+            }
+
+            sub_vehicle_size.clear();
+            for (const auto &sub_vehicle : data->sub_vehicle)
+            {
+                sub_vehicle_size.push_back({sub_vehicle.length / 100, sub_vehicle.width / 100});
+            }
+            if (sub_vehicle_size.size() >= 1) // 서브차량이 있다면 work상태 true
+            {
+                worksub1 = true;
+                adcm::Log::Info() << "[WorkInfo] 서브차량1 길이: " << sub_vehicle_size[0].length << ", 폭: " << sub_vehicle_size[0].width;
+            }
+            if (sub_vehicle_size.size() >= 2)
+            {
+                worksub2 = true;
+                adcm::Log::Info() << "[WorkInfo] 서브차량2 길이: " << sub_vehicle_size[1].length << ", 폭: " << sub_vehicle_size[1].width;
+            }
+
+            adcm::Log::Info() << "[WorkInfo] workego: " << workego << ", worksub1: " << worksub1 << ", worksub2: " << worksub2;
+            work_boundary.clear();
+            for (const auto &boundary : data->working_area_boundary)
+            {
+                work_boundary.push_back({boundary.x, boundary.y});
+            }
+
+            type = data->type;
+
+            // boundary 좌표의 가장 작은 지점 min_x, min_y의 utm좌표가 맵의 (0, 0)이 된다.
+            // (0, 0)은 origin_x, origin_y
+            min_lon = work_boundary[0].lon;
+            min_lat = work_boundary[0].lat;
+            max_lon = work_boundary[0].lon;
+            max_lat = work_boundary[0].lat;
+
+            for (int i = 1; i < work_boundary.size(); i++)
+            {
+                min_lon = work_boundary[i].lon < min_lon ? work_boundary[i].lon : min_lon;
+                min_lat = work_boundary[i].lat < min_lat ? work_boundary[i].lat : min_lat;
+                max_lon = work_boundary[i].lon > max_lon ? work_boundary[i].lon : max_lon;
+                max_lat = work_boundary[i].lat > max_lat ? work_boundary[i].lat : max_lat;
+            }
+            adcm::Log::Info() << "[WorkInfo] 실증 테스트";
+            adcm::Log::Info() << "map의 min(lon, lat) 값: (" << min_lon << ", " << min_lat << "), max(lon, lat) 값 : (" << max_lon << ", " << max_lat << ")";
+
+            GPStoUTM(min_lon, min_lat, min_utm_x, min_utm_y);
+            GPStoUTM(max_lon, max_lat, max_utm_x, max_utm_y);
+
+            adcm::Log::Info() << "map의 minutm(x, y) 값: (" << min_utm_x << ", " << min_utm_y << "), maxutm(x, y) 값 : (" << max_utm_x << ", " << max_utm_y << ")";
+            map_x = (max_utm_x - min_utm_x) * 10;
+            map_y = (max_utm_y - min_utm_y) * 10;
+            adcm::Log::Info() << "맵 사이즈: (" << map_x << ", " << map_y << ")";
+            origin_x = min_utm_x;
+            origin_y = min_utm_y;
+
+            processWorkingAreaBoundary(work_boundary);
+        }
+
+        sendEmptyMap = true;
+        someipReady.notify_one();
+        get_workinfo = true;
+    }
+}
